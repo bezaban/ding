@@ -5,15 +5,24 @@ import SocketServer
 import ConfigParser
 import argparse
 import os
+import sys
 import logging
 
-def run():
-    Handler = SimpleHTTPServer.SimpleHTTPRequestHandler
+class LoggingHttpHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
+    def log_message(self, format, *args):
+        logging.info("%s - - [%s] %s\n" %(self.client_address[0], self.log_date_time_string(), format%args))
+
+    def version_string(self):
+        return("Hackeriet Doorbell API")  
+
+def runHttpServer(listen_port):
+    Handler = LoggingHttpHandler 
     httpd = SocketServer.TCPServer(("", listen_port), Handler)
-    print "serving at port", listen_port
-    httpd.serve_forever()
+    logging.info("Server started on port tcp/%s", listen_port)
+    return httpd
 
 def main():
+    version = "0.1"
 
     # parse cmdline arguments
     parser = argparse.ArgumentParser()
@@ -29,8 +38,7 @@ def main():
             level = logging.DEBUG
 
     logging.basicConfig(filename='ding.log',level=level)    
-   
-    logging.debug("Called with %s") % args.debug
+    logging.info("Ding %s Called with debug: %s", version, str(args.debug)) 
     
     # check if config file is present
     if not os.path.isfile(args.config):
@@ -41,7 +49,7 @@ def main():
     cfg.read(args.config)
 
     try:
-        listen_port = cfg.get('default', 'port')
+        listen_port = int(cfg.get('default', 'port'))
         auth_token = cfg.get('default', 'token')
     except ConfigParser.NoSectionError, error:
         print >> sys.stderr, "ERROR. Config file invalid: %s" % error
@@ -49,12 +57,12 @@ def main():
     except ConfigParser.NoOptionError, error:
         print >> sys.stderr, "ERROR. Config file invalid: %s" % error
         sys.exit(1)
-    listen_port=8000
+    except ValueError, error: 
+        print >> sys.stderr, "ERROR. %s" % error
+        sys.exit(1)
 
-    Handler = SimpleHTTPServer.SimpleHTTPRequestHandler
-    httpd = SocketServer.TCPServer(("", listen_port), Handler)
-    print "serving at port", listen_port
-    httpd.serve_forever()
+    server = runHttpServer(listen_port)
+    server.serve_forever()
 
 if __name__ == "__main__":
         main()
