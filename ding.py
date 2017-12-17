@@ -1,7 +1,5 @@
 #!/usr/bin/python
 
-# Todo IRC TLS
-
 # Requires espeak 
 
 import SocketServer
@@ -25,7 +23,9 @@ from multiprocessing import Queue, Process
 from io import StringIO
 from socket import error as socket_error
 
+# Todo IRC TLS, identification, multiprocessing for sound, logging to syslog, graceful shutdown 
 # Hack - fix. No global vars/functions
+
 queue = Queue()
 version = "0.5"
 
@@ -59,8 +59,12 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         #except json.JSONDecodeError as e:
         #    self.send_error(400, "Invalid JSON")
         #    return
-        try: 
-            if parsed["action"] == "ring":
+        try:
+
+            if parsed["action"] == "proxyding":
+                self.send_response(204)
+                proxyding(self.client_address[0], parsed["ipaddr"], parsed["nickname"])
+            if parsed["action"] == "ding":
                 self.send_response(204)
                 ding(self.client_address[0])
             if parsed["action"] == "say":
@@ -71,7 +75,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 ircNotify(self.client_address[0])
 
         except KeyError as e: 
-            self.send_error(400, "JSON key 'action' not found")
+            self.send_error(400, "JSON invalid")
             return
  
         self.send_response(204)
@@ -119,7 +123,11 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         # Trust that the request is legit if we're here
         return True
 
+def proxyding(address, original_address, nickname):
+    ircNotifyNick(address, original_address, nickname)
+
 def ding(address):
+        ircNotify(address)
         chunk = 1024  
         f = wave.open(r"wav/doorbell-1.wav","rb")  
         #instantiate PyAudio  
@@ -143,7 +151,6 @@ def ding(address):
 
         #close PyAudio  
         p.terminate()  
-        ircNotify(address)
 
 def say(address):
     ircNotify(address)
@@ -151,24 +158,43 @@ def say(address):
     engine.say(address)
     engine.runAndWait()
 
+def ircQuit():
+    queue.put("QUIT")
+
 def ircNotify(address):
     queue.put("DING! from " + address)
 
+def ircNotifyNick(address, original_address, nickname):
+    queue.put("DING! from " + nickname + " @ " + original_address + " via " + address)
+
 def connectIRC(queue, network, port, nick, channel):
-        logging.info('Connecting to IRC')
+        logging.info('Connecting to %s:%s', network, port)
         irc = socket.socket (socket.AF_INET, socket.SOCK_STREAM)
         irc.connect ((network, port))
-        irc.recv (4096)
+        irc.recv (1024)
         irc.send ('NICK ' + nick + '\r\n')
         irc.send ('USER ding * *: Hackeriet_Doorbell_' + version + '\r\n')
         irc.send ('JOIN ' + channel + '\r\n')
         irc.send ('NOTICE ' + channel + ' :Hackeriet Doorbell ' + version + '\r\n')
         while True:
-            data = irc.recv (4096)
-            if data.find ('PING') != -1:
-                irc.send ('PONG ' + data.split() [ 1 ] + '\r\n')
-            value = queue.get()
-            irc.send ('NOTICE ' + channel + ' :' + value + '\r\n')
+            try:
+                data = irc.recv (1024 ,0x40) # O_NONBLOCK
+                if data.find ('PING') != -1:
+                    irc.send ('PONG ' + data.split() [ 1 ] + '\r\n')
+                elif data.find ("End of /MOTD command.") != -1:
+                    logging.info("Connected to %s:%s", network, port)
+                elif data.find ("End of /NAMES list") != -1:
+                    logging.info("Joined %s", channel)
+            except socket_error as e: # [Errno 11] Resource temporarily unavailable
+                while not queue.empty():
+                    value = queue.get()
+                    print value
+                    if value == "QUIT":
+                        logging.info("Shutting down IRC")
+                        irc.send ('QUIT Message\r\n')
+                        break
+                    else:
+                        irc.send ('NOTICE ' + channel + ' :' + value + '\r\n')
 
 def handleRequestsUsing(auth_test):
     return lambda *args: RequestHandler(auth_test, *args)
@@ -231,6 +257,7 @@ def main():
             server = runHttpServer(listen_port, auth_token)
             retries = 0 
             server.serve_forever()
+
         except socket_error as e:
             print "Can't bind to socket, retrying.. %s" % retries 
             if retries == 20:
@@ -239,7 +266,10 @@ def main():
             retries = retries - 1 
         except KeyboardInterrupt:
             logging.info("Caught ^C")
-            print("\nProgram exit")
+        finally:
+            p.join()
+            logging.info("Exiting")
+
 
 if __name__ == "__main__":
         main()
