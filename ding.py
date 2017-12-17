@@ -1,5 +1,9 @@
 #!/usr/bin/python
 
+# Todo IRC TLS
+
+# Requires espeak 
+
 import SocketServer
 import BaseHTTPServer
 import ConfigParser
@@ -9,19 +13,34 @@ import sys
 import logging
 import time  
 import json
+import pyttsx
+import pyaudio
+import wave
+
+# Irc part
+import socket
+from multiprocessing import Queue, Process
+
+# Socket error handling
 from io import StringIO
 from socket import error as socket_error
+
+# Hack - fix. No global vars/functions
+queue = Queue()
+version = "0.4"
 
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
     def __init__(self, auth_token, *args):
         self.auth_token = auth_token 
         BaseHTTPServer.BaseHTTPRequestHandler.__init__(self, *args)
-        self.server_version = "Hackeriet doorbell"
-        self.sys_version = ""
 
+    def log_message(self, format, *args):
+        logging.info("%s - - [%s] %s" %(self.client_address[0], self.log_date_time_string(), format % args))
 
     def do_POST(self):
+        self.server_version = "Hackeriet doorbell"
+        self.sys_version = version 
         if not self.validate_post_request():
             return
 
@@ -32,24 +51,32 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             data = self.rfile.read(1).decode("utf8")
             buf_len += buf.write(data)
 
-        # Parse JSON to verify its structure
+        # Parse JSON and verify its structure
         parsed = {}
-        try:
-            parsed = json.dumps(buf.getvalue(), indent=2)
-        except json.JSONDecodeError as e:
-            logging.info("Failed to parse JSON string", e)
-            self.send_error(400, explain="Invalid JSON")
+        #try:
+        parsed = json.loads(buf.getvalue())
+        
+        #except json.JSONDecodeError as e:
+        #    self.send_error(400, "Invalid JSON")
+        #    return
+        try: 
+            if parsed["action"] == "ring":
+                self.send_response(204)
+                #self.finish() #Untidy
+                #self.connection.close() #Untidy
+                ding(self.client_address[0])
+            if parsed["action"] == "say":
+                self.send_response(204)
+                #self.finish() # Untidy
+                #self.connection.close() # Untidy
+                say(self.client_address[0])
+
+        except KeyError as e: 
+            self.send_error(400, "JSON key 'action' not found")
             return
-
-        # Serialize and save configuration to disk
-#        with open(CONF, mode='w', encoding="utf8") as config_file:
-#            json.dump(parsed, config_file, ensure_ascii=True)
-
+ 
         self.send_response(204)
-
-    def log_message(self, format, *args):
-        logging.info("%s - - [%s] %s" %(self.client_address[0], self.log_date_time_string(), format % args))
-
+   
     def validate_post_request(self):
         MAX_REQUEST_LENGTH = 4 * 1024 * 1024
         if self.path != "/":
@@ -59,14 +86,17 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         try:
             if self.headers["Authorization"] != self.auth_token:
                 self.send_error(401, "Speak friend and enter")
+                self.log_message("Authorization failed")
                 return False
         except KeyError as e:
             self.send_error(401, "Authorization header required")
+            self.log_message("Authorization failed")
             return False
         
         try:
             if self.headers["content-type"] != "application/json":
                 self.send_error(400, "Only accepts application/json")
+                self.log_message("No content length set")
                 return False
         except KeyError as e:
                 self.send_error(400, "Please specify content-type")
@@ -90,9 +120,54 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         # Trust that the request is legit if we're here
         return True
 
-# Whyy https://thekondor.blogspot.no/2013/05/pass-arguments-to-basehttprequesthandler.html
-#def get_auth_token(output):
-#    output.write("password")
+def ding(address):
+        print "DING %s" % address
+        chunk = 1024  
+        f = wave.open(r"wav/doorbell-1.wav","rb")  
+        queue.put("DING! from " + address) 
+        #instantiate PyAudio  
+        p = pyaudio.PyAudio()  
+        #open stream  
+        stream = p.open(format = p.get_format_from_width(f.getsampwidth()),  
+                channels = f.getnchannels(),  
+                rate = f.getframerate(),  
+                output = True)  
+        #read data  
+        data = f.readframes(chunk)  
+
+        #play stream  
+        while data:  
+            stream.write(data)  
+            data = f.readframes(chunk)  
+
+        #stop stream  
+        stream.stop_stream()  
+        stream.close()  
+
+        #close PyAudio  
+        p.terminate()  
+
+def say(address):
+    engine = pyttsx.init()
+    queue.put("DING! from " + address) 
+    engine.say(address)
+    engine.runAndWait()
+
+def connectIRC(queue, network, port, nick, channel):
+        logging.info('Connecting to IRC')
+        irc = socket.socket (socket.AF_INET, socket.SOCK_STREAM)
+        irc.connect ((network, port))
+        irc.recv (4096)
+        irc.send ('NICK ' + nick + '\r\n')
+        irc.send ('USER ding * *: Hackeriet_Doorbell_' + version + '\r\n')
+        irc.send ('JOIN ' + channel + '\r\n')
+        irc.send ('PRIVMSG ' + channel + ' :Hackeriet Doorbell ' + version + '\r\n')
+        while True:
+            data = irc.recv (4096)
+            if data.find ('PING') != -1:
+                irc.send ('PONG ' + data.split() [ 1 ] + '\r\n')
+            value = queue.get()
+            irc.send ('PRIVMSG ' + channel + ' :' + value + '\r\n')
 
 def handleRequestsUsing(auth_test):
     return lambda *args: RequestHandler(auth_test, *args)
@@ -104,8 +179,6 @@ def runHttpServer(listen_port, auth_token):
     return httpd
 
 def main():
-    version = "0.3"
-
     # parse cmdline arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--debug', action='store_true',
@@ -134,6 +207,11 @@ def main():
         listen_port = int(cfg.get('default', 'port'))
         auth_token = cfg.get('default', 'token')
         retries = int(cfg.get('default', 'retries'))
+        ircport = int(cfg.get('default', 'irc.port'))
+        ircserver = cfg.get('default', 'irc.server')
+        ircnick = cfg.get('default', 'irc.nick')
+        ircchannel = cfg.get('default', 'irc.channel')
+
     except ConfigParser.NoSectionError, error:
         print >> sys.stderr, "ERROR. Config file invalid: %s" % error
         sys.exit(2)
@@ -146,13 +224,16 @@ def main():
    
     while retries > 0:
         try: 
+            p = Process(target=connectIRC, args=(queue, ircserver, ircport, ircnick, ircchannel))
+            p.start()
+            
             server = runHttpServer(listen_port, auth_token)
             retries = 0 
             server.serve_forever()
-        except socket_error as error:
+        except socket_error as e:
             print "Can't bind to socket, retrying.. %s" % retries 
             if retries == 20:
-                logging.info("ERROR. %s", error)
+                logging.info("ERROR. %s", e)
             time.sleep(2)
             retries = retries - 1 
         except KeyboardInterrupt:
