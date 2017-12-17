@@ -212,7 +212,6 @@ def main():
         ircserver = cfg.get('default', 'irc.server')
         ircnick = cfg.get('default', 'irc.nick')
         ircchannel = cfg.get('default', 'irc.channel')
-        silent = cfg.get('default', 'silent')
 
     except ConfigParser.NoSectionError, error:
         print >> sys.stderr, "ERROR. Config file invalid: %s" % error
