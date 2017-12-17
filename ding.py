@@ -28,7 +28,6 @@ from socket import error as socket_error
 # Hack - fix. No global vars/functions
 queue = Queue()
 version = "0.5"
-silent = True
 
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
@@ -63,14 +62,13 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         try: 
             if parsed["action"] == "ring":
                 self.send_response(204)
-                #self.finish() #Untidy
-                #self.connection.close() #Untidy
                 ding(self.client_address[0])
             if parsed["action"] == "say":
                 self.send_response(204)
-                #self.finish() # Untidy
-                #self.connection.close() # Untidy
                 say(self.client_address[0])
+            if parsed["action"] == "ircnotify":
+                self.send_response(204)
+                ircNotify(self.client_address[0])
 
         except KeyError as e: 
             self.send_error(400, "JSON key 'action' not found")
@@ -122,37 +120,39 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         return True
 
 def ding(address):
-        if not silent:
-            chunk = 1024  
-            f = wave.open(r"wav/doorbell-1.wav","rb")  
-            #instantiate PyAudio  
-            p = pyaudio.PyAudio()  
-            #open stream  
-            stream = p.open(format = p.get_format_from_width(f.getsampwidth()),  
-                channels = f.getnchannels(),  
-                rate = f.getframerate(),  
-                output = True)  
-            #read data  
+        chunk = 1024  
+        f = wave.open(r"wav/doorbell-1.wav","rb")  
+        #instantiate PyAudio  
+        p = pyaudio.PyAudio()  
+        #open stream  
+        stream = p.open(format = p.get_format_from_width(f.getsampwidth()),  
+            channels = f.getnchannels(),  
+            rate = f.getframerate(),  
+            output = True)  
+        #read data  
+        data = f.readframes(chunk)  
+
+        #play stream  
+        while data:  
+            stream.write(data)  
             data = f.readframes(chunk)  
 
-            #play stream  
-            while data:  
-                stream.write(data)  
-                data = f.readframes(chunk)  
+        #stop stream  
+        stream.stop_stream()  
+        stream.close()  
 
-            #stop stream  
-            stream.stop_stream()  
-            stream.close()  
-
-            #close PyAudio  
-            p.terminate()  
-        queue.put("DING! from " + address) 
+        #close PyAudio  
+        p.terminate()  
+        ircNotify(address)
 
 def say(address):
+    ircNotify(address)
     engine = pyttsx.init()
-    queue.put("DING! from " + address) 
     engine.say(address)
     engine.runAndWait()
+
+def ircNotify(address):
+    queue.put("DING! from " + address)
 
 def connectIRC(queue, network, port, nick, channel):
         logging.info('Connecting to IRC')
@@ -212,6 +212,7 @@ def main():
         ircserver = cfg.get('default', 'irc.server')
         ircnick = cfg.get('default', 'irc.nick')
         ircchannel = cfg.get('default', 'irc.channel')
+        silent = cfg.get('default', 'silent')
 
     except ConfigParser.NoSectionError, error:
         print >> sys.stderr, "ERROR. Config file invalid: %s" % error
