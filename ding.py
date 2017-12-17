@@ -14,6 +14,7 @@ import json
 import pyttsx
 import pyaudio
 import wave
+import ssl
 
 # Irc part
 import socket
@@ -179,6 +180,7 @@ def connectIRC(queue, network, port, nick, channel):
         while True:
             try:
                 data = irc.recv (1024 ,0x40) # O_NONBLOCK
+                logging.debug(data)
                 if data.find ('PING') != -1:
                     irc.send ('PONG ' + data.split() [ 1 ] + '\r\n')
                 elif data.find ("End of /MOTD command.") != -1:
@@ -188,7 +190,7 @@ def connectIRC(queue, network, port, nick, channel):
             except socket_error as e: # [Errno 11] Resource temporarily unavailable
                 while not queue.empty():
                     value = queue.get()
-                    print value
+                    logging.debug(value)
                     if value == "QUIT":
                         logging.info("Shutting down IRC")
                         irc.send ('QUIT Message\r\n')
@@ -201,7 +203,12 @@ def handleRequestsUsing(auth_test):
 
 def runHttpServer(listen_port, auth_token):
     Handler = handleRequestsUsing(auth_token) 
+    #Handler = RequestHandler
     httpd = SocketServer.TCPServer(("", listen_port), Handler)
+    httpd.socket = ssl.wrap_socket (httpd.socket,
+        keyfile="tls/key.pem",
+        certfile='tls/cert.pem', server_side=True)
+
     logging.info("Server started on port tcp/%s", listen_port)
     return httpd
 
@@ -234,6 +241,7 @@ def main():
         listen_port = int(cfg.get('default', 'port'))
         auth_token = cfg.get('default', 'token')
         retries = int(cfg.get('default', 'retries'))
+        ircconnect = cfg.get('default', 'irc.connect')
         ircport = int(cfg.get('default', 'irc.port'))
         ircserver = cfg.get('default', 'irc.server')
         ircnick = cfg.get('default', 'irc.nick')
@@ -248,16 +256,18 @@ def main():
     except ValueError, error: 
         print >> sys.stderr, "ERROR. %s" % error
         sys.exit(2)
-   
+
+    if ircconnect: 
+        irc = Process(target=connectIRC, args=(queue, ircserver, ircport, ircnick, ircchannel))
+        irc.start()
+        #irc.join()
+           
     while retries > 0:
         try: 
-            p = Process(target=connectIRC, args=(queue, ircserver, ircport, ircnick, ircchannel))
-            p.start()
-            
             server = runHttpServer(listen_port, auth_token)
             retries = 0 
             server.serve_forever()
-
+            
         except socket_error as e:
             print "Can't bind to socket, retrying.. %s" % retries 
             if retries == 20:
@@ -267,9 +277,7 @@ def main():
         except KeyboardInterrupt:
             logging.info("Caught ^C")
         finally:
-            p.join()
             logging.info("Exiting")
-
 
 if __name__ == "__main__":
         main()
