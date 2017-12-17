@@ -27,7 +27,8 @@ from socket import error as socket_error
 
 # Hack - fix. No global vars/functions
 queue = Queue()
-version = "0.4"
+version = "0.5"
+silent = True
 
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
@@ -121,31 +122,31 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         return True
 
 def ding(address):
-        print "DING %s" % address
-        chunk = 1024  
-        f = wave.open(r"wav/doorbell-1.wav","rb")  
-        queue.put("DING! from " + address) 
-        #instantiate PyAudio  
-        p = pyaudio.PyAudio()  
-        #open stream  
-        stream = p.open(format = p.get_format_from_width(f.getsampwidth()),  
+        if not silent:
+            chunk = 1024  
+            f = wave.open(r"wav/doorbell-1.wav","rb")  
+            #instantiate PyAudio  
+            p = pyaudio.PyAudio()  
+            #open stream  
+            stream = p.open(format = p.get_format_from_width(f.getsampwidth()),  
                 channels = f.getnchannels(),  
                 rate = f.getframerate(),  
                 output = True)  
-        #read data  
-        data = f.readframes(chunk)  
-
-        #play stream  
-        while data:  
-            stream.write(data)  
+            #read data  
             data = f.readframes(chunk)  
 
-        #stop stream  
-        stream.stop_stream()  
-        stream.close()  
+            #play stream  
+            while data:  
+                stream.write(data)  
+                data = f.readframes(chunk)  
 
-        #close PyAudio  
-        p.terminate()  
+            #stop stream  
+            stream.stop_stream()  
+            stream.close()  
+
+            #close PyAudio  
+            p.terminate()  
+        queue.put("DING! from " + address) 
 
 def say(address):
     engine = pyttsx.init()
