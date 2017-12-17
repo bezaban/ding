@@ -162,13 +162,13 @@ def connectIRC(queue, network, port, nick, channel):
         irc.send ('NICK ' + nick + '\r\n')
         irc.send ('USER ding * *: Hackeriet_Doorbell_' + version + '\r\n')
         irc.send ('JOIN ' + channel + '\r\n')
-        irc.send ('PRIVMSG ' + channel + ' :Hackeriet Doorbell ' + version + '\r\n')
+        irc.send ('NOTICE ' + channel + ' :Hackeriet Doorbell ' + version + '\r\n')
         while True:
             data = irc.recv (4096)
             if data.find ('PING') != -1:
                 irc.send ('PONG ' + data.split() [ 1 ] + '\r\n')
             value = queue.get()
-            irc.send ('PRIVMSG ' + channel + ' :' + value + '\r\n')
+            irc.send ('NOTICE ' + channel + ' :' + value + '\r\n')
 
 def handleRequestsUsing(auth_test):
     return lambda *args: RequestHandler(auth_test, *args)
