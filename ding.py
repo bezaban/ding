@@ -74,6 +74,9 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             if parsed["action"] == "ircnotify":
                 self.send_response(204)
                 ircNotify(self.client_address[0])
+            if parsed["action"] == "sayding":
+                self.send_response(204)
+                sayding(self.client_address[0])
 
         except KeyError as e: 
             self.send_error(400, "JSON invalid")
@@ -157,6 +160,12 @@ def say(address):
     ircNotify(address)
     engine = pyttsx.init()
     engine.say(address)
+    engine.runAndWait()
+
+def sayding(address):
+    ircNotify(address)
+    engine = pyttsx.init()
+    engine.say("ding dong")
     engine.runAndWait()
 
 def ircQuit():
