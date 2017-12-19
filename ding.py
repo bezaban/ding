@@ -205,9 +205,9 @@ def runHttpServer(listen_port, auth_token):
     Handler = handleRequestsUsing(auth_token) 
     #Handler = RequestHandler
     httpd = SocketServer.TCPServer(("", listen_port), Handler)
-    httpd.socket = ssl.wrap_socket (httpd.socket,
-        keyfile="tls/key.pem",
-        certfile='tls/cert.pem', server_side=True)
+    #httpd.socket = ssl.wrap_socket (httpd.socket,
+    #    keyfile="tls/key.pem",
+    #    certfile='tls/cert.pem', server_side=True)
 
     logging.info("Server started on port tcp/%s", listen_port)
     return httpd
