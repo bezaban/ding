@@ -30,6 +30,9 @@ from socket import error as socket_error
 queue = Queue()
 version = "0.5"
 
+class HTTPServerV6(HTTPServer):
+    address_family = socket.AF_INET6
+
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
     def __init__(self, auth_token, *args):
@@ -212,8 +215,10 @@ def handleRequestsUsing(auth_test):
 
 def runHttpServer(listen_port, auth_token):
     Handler = handleRequestsUsing(auth_token) 
-    #Handler = RequestHandler
-    httpd = SocketServer.TCPServer(("", listen_port), Handler)
+
+    httpd = HTTPServerV6(('::', listen_port), Handler)
+    #httpd = SocketServer.TCPServer(("", listen_port), Handler)
+    
     #httpd.socket = ssl.wrap_socket (httpd.socket,
     #    keyfile="tls/key.pem",
     #    certfile='tls/cert.pem', server_side=True)
