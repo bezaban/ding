@@ -183,7 +183,7 @@ def ircNotify(address):
     queue.put("DING! from " + address)
 
 def ircNotifyNick(address, original_address, nickname):
-    queue.put("DING! from " + nickname + " @ " + original_address + " via " + address)
+    queue.put("DING! from " + nickname + " @" + original_address + " via web")
 
 def connectIRC(queue, network, port, nick, channel):
         logging.info('Connecting to %s:%s', network, port)
