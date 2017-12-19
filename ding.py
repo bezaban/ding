@@ -28,7 +28,7 @@ from socket import error as socket_error
 # Hack - fix. No global vars/functions
 
 queue = Queue()
-version = "0.5"
+version = "0.6"
 
 class TCPServer6(SocketServer.TCPServer):
     address_family = socket.AF_INET6
