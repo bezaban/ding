@@ -132,9 +132,8 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
 def proxyding(address, original_address, nickname):
     ircNotifyNick(address, original_address, nickname)
-    ircNotify(address)
     engine = pyttsx.init()
-    engine.say("ding dong")
+    engine.say("ding dong from web")
     engine.runAndWait()
 
 # Cleanup the below
